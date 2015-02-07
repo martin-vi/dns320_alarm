@@ -34,7 +34,6 @@ def cli(ctx, debug):
 @click.option('-t', '--time', default=now.strftime('%H:%M'), help='Time HH:MM')
 @click.pass_context
 def write(ctx, month, day, time):
-    #click.echo('Debug is %s' % (ctx.obj['DEBUG'] and 'on' or 'off'))
     if month < 1 or month > 12:
         click.echo('invalid month option {}'.format(month))
         return
@@ -59,7 +58,6 @@ def write(ctx, month, day, time):
 @cli.command()
 @click.pass_context
 def disable(ctx):
-    #click.echo('Debug is %s' % (ctx.obj['DEBUG'] and 'on' or 'off'))
     alarm = NasAlarm(ctx.obj['SERIAL'])
     alarm.disableAlarm()
     echo_alarm(alarm.getAlarm(), disable=True)
@@ -67,7 +65,6 @@ def disable(ctx):
 @cli.command()
 @click.pass_context
 def read(ctx):
-    #click.echo('Debug is %s' % (ctx.obj['DEBUG'] and 'on' or 'off'))
     alarm = NasAlarm(ctx.obj['SERIAL'])
     echo_alarm(alarm.getAlarm())
 
