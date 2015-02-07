@@ -43,7 +43,7 @@ def localTZ(dtime):
     else:
         return dtime.replace(tzinfo=tz.tzlocal())
 
-class serial_connection(object):
+class SerialConnection(object):
 
     device = "/dev/ttyS1"
     baudrate = 115200
@@ -94,8 +94,7 @@ class serial_connection(object):
         while self.getData():
             pass
 
-
-class nas_alarm(object):
+class NasAlarm(object):
 
     def __init__(self, serial_connection):
         self._ser = serial_connection
@@ -172,11 +171,11 @@ if __name__ == '__main__':
     To test the lib exec lib320Alarm.py and poweroff
     the device. It should power up in about 3 minutes.
     """
-    
+
     print 'current time: ' + datetime.now().strftime(DATE_FORMAT)
 
-    serial_connection = serial_connection()
-    alarm = nas_alarm(serial_connection)
+    ser = SerialConnection()
+    alarm = NasAlarm(ser)
 
     print 'old wakeup time: ' + str(alarm)
 
