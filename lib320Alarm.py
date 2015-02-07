@@ -46,12 +46,13 @@ class SerialConnection(object):
     device = "/dev/ttyS1"
     baudrate = 115200
 
-    def __init__(self):
+    def __init__(self, debug=False):
         self.port = serial.Serial(self.device, self.baudrate, 8, "N", 1, 0.1)
+        self._debug=debug
 
     def write(self, data):
         assert len(data) == 7
-        #print 'set value: ' + repr(data)
+        if self._debug: print 'set value: ' + repr(data)
         self.port.write(data)
         self.port.flush()
 
@@ -77,7 +78,7 @@ class SerialConnection(object):
 
     def getData(self):
         data, _ = self._read(), self._read()
-        #print 'read data: ' + repr(data)
+        if self._debug: print 'read data: ' + repr(data)
 	return data
 
     def set_and_get(self, data):
