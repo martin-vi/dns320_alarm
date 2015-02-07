@@ -140,6 +140,12 @@ class NasAlarm(object):
         if check: self.__checkAlarm(dtime)
         return success
 
+    def disableAlarm(self):
+        success = self.__setTime(0, 0)
+        success &= self.__setDate(0, 0)
+        self.__disableAlarm()
+        return success
+
     def __setDate(self, month, day):
         success = self._ser.write_value(WAlarmDateCmd, day)
         success &= self._ser.write_value(WAlarmMonthCmd, month)
