@@ -21,11 +21,9 @@ WAlarmEnableCmd =       "\xfa\x01\x10\x02\x01\x01\xfb"
 WAlarmDisableCmd =      "\xfa\x01\x10\x02\x01\x00\xfb"
 
 DATA_BIT = 5
-DATE_FORMAT = '%d.%m. %H:%M'
 
 def to_hex_base8(integer):
     # e.g. 50 to \x50 equals printable ascii char 'P'
-
     #cmdBuf[i] = ((cmdBuf[i] / 10) << 4) + (cmdBuf[i] % 10);
     return chr( integer + ( integer / 10 ) * 6 )
 
@@ -96,6 +94,8 @@ class SerialConnection(object):
 
 class NasAlarm(object):
 
+    date_format = '%d.%m. %H:%M'
+
     def __init__(self, serial_connection):
         self._ser = serial_connection
 
@@ -104,7 +104,7 @@ class NasAlarm(object):
         if not wakeup:
             return 'no alarm time set'
         else:
-            return wakeup.strftime(DATE_FORMAT)
+            return wakeup.strftime(self.date_format)
 
     def getAlarm(self):
         self._ser.scrub()
@@ -158,7 +158,7 @@ class NasAlarm(object):
 
     def __checkAlarm(self, dtime):
         readTime = str(self)
-        setTime = localTZ(dtime).strftime(DATE_FORMAT)
+        setTime = localTZ(dtime).strftime(self.date_format)
 
         while readTime != setTime:
             print 'read alarm time (%s) doesn\'t match the new alarm (%s) time, retry' % (readTime, setTime)
@@ -172,7 +172,7 @@ if __name__ == '__main__':
     the device. It should power up in about 3 minutes.
     """
 
-    print 'current time: ' + datetime.now().strftime(DATE_FORMAT)
+    print 'current time: ' + datetime.now().strftime(NasAlarm.date_format)
 
     ser = SerialConnection()
     alarm = NasAlarm(ser)
@@ -182,4 +182,4 @@ if __name__ == '__main__':
     wakeup = datetime.now() + timedelta(minutes=3)
     alarm.setAlarm(wakeup)
 
-    print 'new wakup time: ' + wakeup.strftime(DATE_FORMAT)
+    print 'new wakup time: ' + wakeup.strftime(NasAlarm.date_format)
