@@ -168,12 +168,19 @@ class nas_alarm(object):
             readTime = str(self)
 
 if __name__ == '__main__':
+    """
+    To test the lib exec lib320Alarm.py and poweroff
+    the device. It should power up in about 3 minutes.
+    """
+    
+    print 'current time: ' + datetime.now().strftime(DATE_FORMAT)
 
     serial_connection = serial_connection()
     alarm = nas_alarm(serial_connection)
 
     print 'old wakeup time: ' + str(alarm)
 
-    wakeup = datetime.now() + timedelta(minutes=2)
+    wakeup = datetime.now() + timedelta(minutes=3)
     alarm.setAlarm(wakeup)
+
     print 'new wakup time: ' + wakeup.strftime(DATE_FORMAT)
