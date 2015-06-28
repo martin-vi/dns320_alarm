@@ -18,6 +18,7 @@ Options:
 Commands:
   disable
   read
+  rtc
   write
 ```
 
@@ -57,6 +58,21 @@ Setting alarm to: 15.02. 11:42
 ```bash
 $ ./ctl_alarm.py disable
 Alarm is disabled
+```
+
+### read and write the hardware clock
+
+The hardware clock timezone is UTC and is converted to the local timezone.
+
+```bash
+$ ./ctl_alarm.py rtc
+RTC date and time is set to: 2015-06-28 14:34:19
+$ ./ctl_alarm.py rtc --systohc
+writing system clock to hardware clock
+RTC date and time is set to: 2015-06-28 14:34:39
+$ ./ctl_alarm.py rtc --hctosys; date
+RTC date and time is set to: 2015-06-28 14:35:09
+Sun Jun 28 14:35:09 CEST 2015
 ```
 
 ## About the D-Link DNS320 family

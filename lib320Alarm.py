@@ -1,5 +1,6 @@
 #!/usr/bin/env python2
 
+import os
 import serial
 import time
 from datetime import datetime, timedelta
@@ -19,6 +20,10 @@ WAlarmMinuteCmd =       "\xfa\x01\x0d\x02\x01\x00\xfb"
 
 WAlarmEnableCmd =       "\xfa\x01\x10\x02\x01\x01\xfb"
 WAlarmDisableCmd =      "\xfa\x01\x10\x02\x01\x00\xfb"
+
+RDateAndTimeCmd =       "\xfa\x01\x08\x01\x01\x00\xfb"
+#                                             sec min  h wday mday mon year
+WDateAndTimeCmd =       "\xfa\x01\x08\x02\x07\x17\x06\x21\x02\x10\x09\x13\xfb"
 
 DATA_BIT = 5
 
@@ -50,8 +55,8 @@ class SerialConnection(object):
         self.port = serial.Serial(self.device, self.baudrate, 8, "N", 1, 0.1)
         self._debug=debug
 
-    def write(self, data):
-        assert len(data) == 7
+    def write(self, data, size=7):
+        assert len(data) == size
         if self._debug: print 'set value: ' + repr(data)
         self.port.write(data)
         self.port.flush()
@@ -68,11 +73,11 @@ class SerialConnection(object):
         self.write(cmd)
         return True
 
-    def _read(self, timeout=5):
+    def _read(self, timeout=5, size=7):
        tstamp = time.time()
        while time.time() - tstamp < timeout:
-          data = self.port.read(7)
-          if data and len(data) == 7 and data[0] == "\xfa":
+          data = self.port.read(size)
+          if data and len(data) == size and data[0] == "\xfa":
              return data
           return None
 
@@ -93,9 +98,88 @@ class SerialConnection(object):
         while self.getData():
             pass
 
+class NasDateTime(object):
+
+    dt_format = '%y-%m-%d %H:%M:%S'
+
+    def __init__(self, serial_connection):
+        self._ser = serial_connection
+
+    def _parse_dt(self, data):
+        dt_dict = {
+                'year':  to_int(data[11]),
+                'month': to_int(data[10]),
+                'day':   to_int(data[9]),
+                'h': to_int(data[7]), 'min': to_int(data[6]), 'sec': to_int(data[5]) }
+        dt_str = '%(year)02i-%(month)02i-%(day)02i %(h)02i:%(min)02i:%(sec)02i' % dt_dict
+        return datetime.strptime(dt_str, self.dt_format).replace(tzinfo=tz.tzutc())
+
+    def _set_sys(self, dtime):
+        dt_str = dtime.strftime(self.dt_format)
+        os.system('date +\"%s\" -s \"%s\" > /dev/null' % (self.dt_format, dt_str))
+
+    def getDateTime(self, set_sys=False):
+        """
+        set value: \xfa\x01\x08\x01\x01\x00\xfb (RDateAndTimeCmd)
+        read data: \xfa\x01\x08\x01\x010#\x10\x00(\x06\x15\xfb'
+
+        bit values 5 to 12:
+            5: 30 ('0') second
+            6: 23 ('#') minute
+            7: 10 ('\x10') hour
+            8: 0 ('\x00') -
+            9: 28 ('(') date
+            10: 6 ('\x06') month
+            11: 15 ('\x15') year
+            12: 161 ('\xfb') -
+
+        .. _note:: time is in UTC
+        """
+        self._ser.scrub()
+        self._ser.write(RDateAndTimeCmd)
+        d = self._ser._read(size=13)
+        if self._ser._debug: print 'read data: ' + repr(d)
+
+        dt_utc = None
+        retry = 0
+        while dt_utc is None:
+            try:
+                dt_utc = self._parse_dt(d)
+            except ValueError, e:
+                if retry >= 3:
+                    raise e
+                else:
+                    time.sleep(3); pass
+            retry += 1
+
+        dt = localTZ(dt_utc)
+        if set_sys:
+            self._set_sys(dt)
+        return dt
+
+    def setDateTime(self, set_dt=None):
+        """
+        see format getDateTime
+        """
+        if not set_dt:
+            set_dt = datetime.now()
+        set_dt_utc = localTZ(set_dt).astimezone(tz.tzutc())
+
+        cmd = list(WDateAndTimeCmd)
+        toHex = lambda form: to_hex_base8(int(set_dt_utc.strftime(form)))
+
+        cmd[11], cmd[10], cmd[9] = toHex('%y'), toHex('%m'), toHex('%d')
+        cmd[7], cmd[6], cmd[5] = toHex('%H'), toHex('%M'), toHex('%S')
+        cmd = ''.join(cmd)
+
+        if self._ser._debug:
+            print 'set date and time: %s' % self._parse_dt(cmd)
+        self._ser.write(cmd, size=13)
+
 class NasAlarm(object):
 
-    date_format = '%d.%m. %H:%M'
+    alarm_format = '%d.%m. %H:%M'
+    rtc_format = '%Y-%m-%d %H:%M:%S'
 
     def __init__(self, serial_connection):
         self._ser = serial_connection
@@ -105,7 +189,7 @@ class NasAlarm(object):
         if not wakeup:
             return 'no alarm time set'
         else:
-            return wakeup.strftime(self.date_format)
+            return wakeup.strftime(self.alarm_format)
 
     def getAlarm(self):
         self._ser.scrub()
@@ -165,7 +249,7 @@ class NasAlarm(object):
 
     def __checkAlarm(self, dtime):
         readTime = str(self)
-        setTime = localTZ(dtime).strftime(self.date_format)
+        setTime = localTZ(dtime).strftime(self.alarm_format)
 
         while readTime != setTime:
             print 'read alarm time (%s) doesn\'t match the new alarm (%s) time, retry' % (readTime, setTime)
@@ -179,7 +263,7 @@ if __name__ == '__main__':
     the device. It should power up in about 3 minutes.
     """
 
-    print 'current time: ' + datetime.now().strftime(NasAlarm.date_format)
+    print 'current time: ' + datetime.now().strftime(NasAlarm.alarm_format)
 
     ser = SerialConnection()
     alarm = NasAlarm(ser)
@@ -189,4 +273,4 @@ if __name__ == '__main__':
     wakeup = datetime.now() + timedelta(minutes=3)
     alarm.setAlarm(wakeup)
 
-    print 'new wakup time: ' + wakeup.strftime(NasAlarm.date_format)
+    print 'new wakup time: ' + wakeup.strftime(NasAlarm.alarm_format)
