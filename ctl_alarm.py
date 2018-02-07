@@ -1,11 +1,12 @@
 #!/usr/bin/env python2
 
+import sys
 import click
-from pytz import timezone
+from dateutil import tz
 from lib320Alarm import SerialConnection, NasAlarm, NasDateTime
 from datetime import datetime, timedelta
 
-now=datetime.now()
+now = datetime.now()
 
 def format_alarm(dtime):
     return dtime.strftime(NasAlarm.alarm_format)
@@ -72,8 +73,8 @@ def write(ctx, month, day, time, next_weekday):
     alarm.setAlarm(wakeup_time)
 
 @cli.command()
-@click.option('-w', '--systohc', is_flag=True, help='Set the Hardware Clock from the System Clock')
-@click.option('-s', '--hctosys', is_flag=True, help='Set  the  System Clock from the Hardware Clock.')
+@click.option('-w', '--systohc', is_flag=True, help='Set the Hardware Clock from the System Clock.')
+@click.option('-s', '--hctosys', is_flag=True, help='Set the System Clock from the Hardware Clock.')
 @click.pass_context
 def rtc(ctx, systohc, hctosys):
     nas_dt = NasDateTime(ctx.obj['SERIAL'])
@@ -99,5 +100,41 @@ def read(ctx):
     alarm = NasAlarm(ctx.obj['SERIAL'])
     echo_alarm(alarm.getAlarm())
 
+def uptime():
+    with open('/proc/uptime', 'r') as f:
+        uptime_seconds = float(f.readline().split()[0])
+    return timedelta(seconds = uptime_seconds)
+
+@cli.command()
+@click.option('-o', '--offset', default=5, type=int, help='Test if boot is scheduled, offset in minutes.')
+@click.option('--use-now', is_flag=True)
+@click.pass_context
+def is_scheduled(ctx, offset, use_now):
+    exit_code = 1
+
+    alarm = NasAlarm(ctx.obj['SERIAL'])
+    alarm_time = alarm.getAlarm()
+    if not alarm_time:
+        click.echo('Scheduled boot time is disabled.')
+        sys.exit(exit_code)
+
+    boot_time = datetime.now(tz=tz.tzlocal())
+    if not use_now:
+        boot_time -= uptime()
+    offset = timedelta(minutes=offset)
+
+    click.echo('Boot time is: {}'.format(format_alarm(boot_time)))
+    if (alarm_time - offset) <= boot_time <= (alarm_time + offset):
+        click.echo('Boot triggered by alarm.')
+        exit_code = 0
+    elif boot_time > alarm_time:
+        click.echo('Boot was triggered after the alarm (offset {0} minutes).'.format(offset))
+    else:
+        click.echo('Boot is before schedule (offset {0} minutes).'.format(offset))
+    echo_alarm(alarm_time)
+    sys.exit(exit_code)
+
+
 if __name__ == '__main__':
     cli(obj={})
+

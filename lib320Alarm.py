@@ -27,18 +27,21 @@ WDateAndTimeCmd =       "\xfa\x01\x08\x02\x07\x17\x06\x21\x02\x10\x09\x13\xfb"
 
 DATA_BIT = 5
 
+class SerialReadError(Exception):
+    pass
+
+class AlarmDisabledException(Exception):
+    pass
+
 def to_hex_base8(integer):
     # e.g. 50 to \x50 equals printable ascii char 'P'
     #cmdBuf[i] = ((cmdBuf[i] / 10) << 4) + (cmdBuf[i] % 10);
     return chr( integer + ( integer / 10 ) * 6 )
 
 def to_int(hex_val):
-    try:
-        temp = ord(hex_val)
-        #buf[i] = (buf[i] & 0x0f) + 10 * ((buf[i] & 0xf0) >> 4);
-        return ( temp >> 4 ) * 10 + ( temp & 0x0f )
-    except TypeError:
-        return None
+    temp = ord(hex_val)
+    #buf[i] = (buf[i] & 0x0f) + 10 * ((buf[i] & 0xf0) >> 4);
+    return ( temp >> 4 ) * 10 + ( temp & 0x0f )
 
 def localTZ(dtime):
     if dtime.tzinfo:
@@ -86,17 +89,28 @@ class SerialConnection(object):
         if self._debug: print 'read data: ' + repr(data)
 	return data
 
-    def set_and_get(self, data):
-        self.write(data)
-        value = self.getData()
-        try:
-            return to_int(value[DATA_BIT])
-        except:
-            return None
+    def set_and_get(self, data, retry=3):
+        for i in range(retry):
+            self.scrub()
+            self.write(data)
+            read_data = self.getData()
+
+            if not read_data:
+                if self._debug: print 'read data failed - retry'
+                continue
+            elif data[:DATA_BIT] != read_data[:DATA_BIT]:
+                if self._debug: print 'invalid data - retry'
+                continue
+            try:
+                return to_int(read_data[DATA_BIT])
+            except TypeError as e:
+                print e
+                continue
+        raise SerialReadError
 
     def scrub(self):
-        while self.getData():
-            pass
+        while self._read():
+	    pass
 
 class NasDateTime(object):
 
@@ -192,26 +206,47 @@ class NasAlarm(object):
             return wakeup.strftime(self.alarm_format)
 
     def getAlarm(self):
-        self._ser.scrub()
-        hour, minute = self.__getTime()
-        month, date = self.__getDate()
-
+        alarm_datetime = None
         try:
-            dtime = datetime( datetime.now().year,
-                month, date, hour, minute, tzinfo=tz.tzutc())
-            return localTZ(dtime)
-        except (TypeError, ValueError):
+            alarm_datetime = self._read_alarm()
+        except AlarmDisabledException:
             return None
+        else:
+            return localTZ(alarm_datetime)
+
+    def _read_alarm(self, retry=3):
+        for _ in range(retry):
+            self._ser.scrub()
+            try:
+                hour, minute = self.__getTime()
+                month, date = self.__getDate()
+            except SerialReadError:
+                if self._ser._debug: print 'SerialReadError - retry'
+                continue
+            try:
+                return datetime(datetime.now().year, month, date, hour, minute, tzinfo=tz.tzutc())
+            except ValueError as e:
+                if self._ser._debug: print e
+                continue
+        raise SerialReadError
 
     def __getDate(self):
-        date = self._ser.set_and_get(RAlarmDateCmd)
         month = self._ser.set_and_get(RAlarmMonthCmd)
-        return (month, date)
+        date = self._ser.set_and_get(RAlarmDateCmd)
+        if self._ser._debug: print 'month {0} date {1}'.format(month, date)
+
+        if month + date == 0:
+            raise AlarmDisabledException
+        elif date == 0 or date > 31 or month == 0 or month > 12:
+            raise SerialReadError
+        else:
+            return month, date
 
     def __getTime(self):
         minute = self._ser.set_and_get(RAlarmMinuteCmd)
         hour = self._ser.set_and_get(RAlarmHourCmd)
-        return (hour, minute)
+        if self._ser._debug: print "hour {0} minute {1}".format(hour, minute)
+        return hour, minute
 
     def setAlarm(self, dtime, check=True):
         dtime = localTZ(dtime).astimezone(tz.tzutc())
